@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Géo-Navigation KMZ V1.26</title>
+    <title>Géo-Navigation KMZ V1.28</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -39,7 +39,7 @@
             position: absolute;
             top: 5px;
             transform-origin: 50% 100%;
-            transition: transform 0.2s linear;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Transition plus douce */
         }
         .compass-direction {
             position: absolute;
@@ -61,7 +61,17 @@
         
         /* Style pour l'icône utilisateur (triangle) */
         .user-marker-icon svg {
-            transition: transform 0.2s linear;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Transition douce pour l'orientation */
+        }
+        
+        /* Animation pour le marqueur sauté */
+        @keyframes pulse-skip {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .skip-animation {
+            animation: pulse-skip 0.5s ease-in-out;
         }
     </style>
 </head>
@@ -69,7 +79,7 @@
 
     <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6 space-y-6">
         <header class="text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Géo-Navigation KMZ V1.26</h1>
+            <h1 class="text-3xl font-bold text-gray-800">Géo-Navigation KMZ V1.28</h1>
             <p class="text-gray-500 mt-1">Enregistrez, créez, exportez et suivez vos parcours.</p>
         </header>
 
@@ -223,6 +233,13 @@
         let drawnPolylineHitbox; 
         let drawnMarkers = [];
 
+        // Variables pour le lissage de la boussole
+        let currentCompassRotation = 0;
+        let targetCompassRotation = 0;
+        let compassAnimationFrame = null;
+        let lastArrowUpdate = 0;
+        const COMPASS_SMOOTHING_FACTOR = 0.15; // Facteur de lissage (plus petit = plus doux)
+
         // Icône personnalisée pour le marqueur utilisateur (triangle bleu)
         const userIcon = L.divIcon({
             className: 'user-marker-icon',
@@ -278,6 +295,48 @@
             }, duration);
         }
 
+        // --- FONCTION DE LISSAGE DE LA BOUSSOLE ---
+        function animateCompass() {
+            if (!compassArrow) return;
+            
+            // Calculer la différence angulaire la plus courte
+            let diff = targetCompassRotation - currentCompassRotation;
+            // Normaliser la différence entre -180 et 180
+            if (diff > 180) diff -= 360;
+            if (diff < -180) diff += 360;
+            
+            // Appliquer le lissage
+            currentCompassRotation += diff * COMPASS_SMOOTHING_FACTOR;
+            
+            // Normaliser la rotation actuelle
+            currentCompassRotation = ((currentCompassRotation % 360) + 360) % 360;
+            
+            // Appliquer la transformation
+            compassArrow.style.transform = `rotate(${currentCompassRotation}deg)`;
+            
+            // Continuer l'animation tant que la différence est significative
+            if (Math.abs(diff) > 0.5) {
+                compassAnimationFrame = requestAnimationFrame(animateCompass);
+            } else {
+                // Atteint la cible, arrêter l'animation
+                if (compassAnimationFrame) {
+                    cancelAnimationFrame(compassAnimationFrame);
+                    compassAnimationFrame = null;
+                }
+                // S'assurer que la rotation est exacte à la fin
+                compassArrow.style.transform = `rotate(${targetCompassRotation}deg)`;
+                currentCompassRotation = targetCompassRotation;
+            }
+        }
+        
+        function setCompassRotation(targetRotation) {
+            targetCompassRotation = ((targetRotation % 360) + 360) % 360;
+            
+            if (!compassAnimationFrame) {
+                animateCompass();
+            }
+        }
+        
         // --- INITIALISATION ---
         function initMap() {
             map = L.map('map').setView([48.8566, 2.3522], 13);
@@ -600,6 +659,15 @@
 
             lastPositionForCourse = null;
             isOrientationSupported = false;
+            
+            // Réinitialiser la rotation de la boussole
+            currentCompassRotation = 0;
+            targetCompassRotation = 0;
+            if (compassAnimationFrame) {
+                cancelAnimationFrame(compassAnimationFrame);
+                compassAnimationFrame = null;
+            }
+            compassArrow.style.transform = 'rotate(0deg)';
 
             totalNavigationDistance = 0;
             for (let i = 0; i < navigationPath.length - 1; i++) {
@@ -658,6 +726,12 @@
             isOrientationSupported = false;
             lastPositionForCourse = null;
             
+            // Arrêter l'animation de la boussole
+            if (compassAnimationFrame) {
+                cancelAnimationFrame(compassAnimationFrame);
+                compassAnimationFrame = null;
+            }
+            
             nextWaypointDistanceInfo.textContent = "";
             totalDistanceInfo.textContent = "";
             progressBar.style.width = '0%';
@@ -665,9 +739,31 @@
             updateUIState();
         }
         
+        // Fonction pour animer un point sauté
+        function animateSkippedPoint(index) {
+            if (!navigationPath[index]) return;
+            
+            // Créer un marqueur temporaire pour l'animation
+            const latLng = navigationPath[index];
+            const tempMarker = L.circleMarker(latLng, {
+                radius: 12,
+                color: '#ff9800',
+                weight: 3,
+                fillColor: '#ffc107',
+                fillOpacity: 0.8,
+                className: 'skip-animation'
+            }).addTo(map);
+            
+            // Supprimer le marqueur après l'animation
+            setTimeout(() => {
+                map.removeLayer(tempMarker);
+            }, 500);
+        }
+        
         function updateTargetWaypoint(index) {
             if (index < 0 || index >= navigationPath.length) return;
             
+            const oldIndex = currentTargetIndex;
             currentTargetIndex = index;
             const targetLatLng = navigationPath[currentTargetIndex];
 
@@ -677,6 +773,16 @@
                 }).addTo(map);
             } else {
                 targetMarker.setLatLng(targetLatLng);
+            }
+            
+            // Animation si on a sauté plusieurs points
+            if (oldIndex !== -1 && Math.abs(oldIndex - index) > 1) {
+                for (let i = oldIndex + 1; i <= index; i++) {
+                    setTimeout(() => animateSkippedPoint(i), i * 100);
+                }
+                showNotification(`Passage direct au point ${index + 1} (${Math.abs(oldIndex - index)} points franchis)`, 2000);
+            } else if (oldIndex !== -1 && oldIndex !== index) {
+                animateSkippedPoint(index);
             }
 
             const totalPoints = navigationPath.length;
@@ -707,15 +813,33 @@
             nextWaypointBtn.disabled = isSinglePoint || currentTargetIndex >= navigationPath.length - 1;
         }
 
+        // Fonction pour trouver le prochain point proche (avec rang > currentTargetIndex)
+        function findNextNearbyPoint(currentLatLng, startIndex) {
+            const PROXIMITY_THRESHOLD = 50; // 50 mètres
+            
+            for (let i = startIndex + 1; i < navigationPath.length; i++) {
+                const distance = calculateDistance(currentLatLng, navigationPath[i]);
+                if (distance <= PROXIMITY_THRESHOLD) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
         function updateNavigation(currentLatLng) {
             if (!isNavigating || currentTargetIndex < 0) return;
             
             const targetLatLng = navigationPath[currentTargetIndex];
             const bearing = calculateBearing(currentLatLng, targetLatLng);
-            compassArrow.dataset.targetBearing = bearing;
-
-            if(!isOrientationSupported){
-                 updateCompass(userCourse);
+            
+            // Mettre à jour la cible de rotation de la boussole (avec lissage)
+            if (!isOrientationSupported) {
+                // Si pas de capteur d'orientation, utiliser la course GPS
+                const arrowRotation = bearing - userCourse;
+                setCompassRotation(arrowRotation);
+            } else {
+                // Stocker le bearing cible pour qu'il soit utilisé par updateCompass
+                compassArrow.dataset.targetBearing = bearing;
             }
 
             const distanceToNextWaypoint = calculateDistance(currentLatLng, targetLatLng);
@@ -736,13 +860,11 @@
                 completionPercentage.textContent = `${percentage.toFixed(1)} % complété`;
             }
 
-            // CORRIGÉ : Logique de zoom avec écouteur d'événement pour plus de robustesse
             if (isAutoscaleEnabled) {
                 map.invalidateSize(); 
                 const bounds = L.latLngBounds([currentLatLng, targetLatLng]);
                 const expandedBounds = expandBoundsByMeters(bounds, 200);
 
-                // Écouteur unique pour corriger le zoom après l'animation de fitBounds
                 map.once('zoomend', function() {
                     if (map.getZoom() > 17) {
                         map.setZoom(17);
@@ -752,14 +874,33 @@
                 map.fitBounds(expandedBounds);
             }
 
-            if (distanceToNextWaypoint < 50 && currentTargetIndex < navigationPath.length - 1) {
-                updateTargetWaypoint(currentTargetIndex + 1);
-            } else if (distanceToNextWaypoint < 50 && currentTargetIndex === navigationPath.length - 1) {
-                statusMessage.textContent = "Vous êtes arrivé à destination !";
-                progressBar.style.width = '100%';
-                completionPercentage.textContent = `100 % complété`;
-                showNotification("Navigation terminée !");
-                setTimeout(stopNavigation, 3000);
+            // Détection des points proches pour saut automatique
+            if (distanceToNextWaypoint < 50) {
+                if (currentTargetIndex < navigationPath.length - 1) {
+                    const nextNearbyIndex = findNextNearbyPoint(currentLatLng, currentTargetIndex);
+                    
+                    if (nextNearbyIndex !== null && nextNearbyIndex > currentTargetIndex) {
+                        showNotification(`Point ${currentTargetIndex + 1} atteint, passage direct au point ${nextNearbyIndex + 1}`, 2500);
+                        updateTargetWaypoint(nextNearbyIndex);
+                    } else if (currentTargetIndex + 1 < navigationPath.length) {
+                        updateTargetWaypoint(currentTargetIndex + 1);
+                    }
+                } else if (currentTargetIndex === navigationPath.length - 1) {
+                    statusMessage.textContent = "Vous êtes arrivé à destination !";
+                    progressBar.style.width = '100%';
+                    completionPercentage.textContent = `100 % complété`;
+                    showNotification("Navigation terminée !");
+                    setTimeout(stopNavigation, 3000);
+                }
+            } else {
+                const nextNearbyIndex = findNextNearbyPoint(currentLatLng, currentTargetIndex);
+                if (nextNearbyIndex !== null) {
+                    const distanceToNearby = calculateDistance(currentLatLng, navigationPath[nextNearbyIndex]);
+                    if (distanceToNearby < 30) {
+                        showNotification(`Point ${nextNearbyIndex + 1} détecté à proximité, saut anticipé !`, 2500);
+                        updateTargetWaypoint(nextNearbyIndex);
+                    }
+                }
             }
         }
         
@@ -803,7 +944,8 @@
             if (heading === null || !isNavigating) return;
             const targetBearing = parseFloat(compassArrow.dataset.targetBearing) || 0;
             const arrowRotation = targetBearing - heading;
-            compassArrow.style.transform = `rotate(${arrowRotation}deg)`;
+            // Utiliser la fonction de lissage
+            setCompassRotation(arrowRotation);
         }
         
         // --- CALCULS GÉODÉSIQUES ET UTILITAIRES ---
@@ -908,6 +1050,7 @@
             }).filter(Boolean);
             
             if (points.length > 0) {
+                const kmlContent = generateKmlString(points);
                 try {
                     localStorage.setItem('lastKmlContent', kmlContent);
                 } catch (e) {
@@ -973,4 +1116,3 @@
     </script>
 </body>
 </html>
-
