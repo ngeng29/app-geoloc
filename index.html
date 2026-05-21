@@ -3,881 +3,790 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Géo-Navigation KMZ V1.30</title>
-    
+    <title>Géo-Navigation KMZ V1.33</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Plugin Leaflet.Rotate -->
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.1.4/dist/leaflet-rotate.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        #map { height: 400px; border-radius: 0.5rem; cursor: default; }
+        #map { height: 400px; border-radius: 0.5rem; cursor: default; background: #e5e7eb; }
         #map.drawing-mode { cursor: crosshair; }
-        .compass-container {
-            width: 150px;
-            height: 150px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border-radius: 50%;
+        .map-container {
             position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border: 2px solid #333;
+            transition: transform 0.2s ease-out;
+            transform-origin: center center;
+        }
+        .compass-container {
+            width: 150px; height: 150px; background-color: rgba(255,255,255,0.8);
+            border-radius: 50%; position: relative; display: flex; align-items: center;
+            justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 2px solid #333;
         }
         .compass-arrow {
-            width: 0;
-            height: 0;
-            border-left: 15px solid transparent;
-            border-right: 15px solid transparent;
-            border-bottom: 70px solid #ef4444;
-            position: absolute;
-            top: 5px;
-            transform-origin: 50% 100%;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 0; height: 0; border-left: 15px solid transparent;
+            border-right: 15px solid transparent; border-bottom: 70px solid #ef4444;
+            position: absolute; top: 5px; transform-origin: 50% 100%;
+            transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
         }
-        button:disabled, .disabled-button {
-            background-color: #9ca3af !important;
-            cursor: not-allowed !important;
-            opacity: 0.7;
-        }
+        button:disabled, .disabled-button { background-color: #9ca3af !important; cursor: not-allowed !important; opacity: 0.7; }
         #notification-banner { z-index: 1000; }
         #progress-bar { transition: width 0.5s ease-in-out; }
-        .user-marker-icon svg {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
+        .user-marker-icon svg { transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); }
         @keyframes pulse-skip {
             0% { transform: scale(1); opacity: 1; }
             50% { transform: scale(1.5); opacity: 0.7; }
             100% { transform: scale(1); opacity: 1; }
         }
-        .skip-animation {
-            animation: pulse-skip 0.5s ease-in-out;
-        }
+        .skip-animation { animation: pulse-skip 0.5s ease-in-out; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans p-4 md:p-6">
 
-    <div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6 space-y-6">
-        <header class="text-center">
-            <h1 class="text-3xl font-bold text-gray-800">Géo-Navigation KMZ V1.30</h1>
-            <p class="text-gray-500 mt-1">Annonces vocales complètes + orientation dynamique de la carte</p>
-        </header>
+<div class="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-6 space-y-6">
+    <header class="text-center">
+        <h1 class="text-3xl font-bold text-gray-800">Géo-Navigation KMZ V1.33</h1>
+        <p class="text-gray-500 mt-1">Trace réelle conservée après navigation + arrivée vocale</p>
+    </header>
 
-        <div id="map-section">
-            <div id="map" class="w-full z-0"></div>
-        </div>
-        
-        <div id="geolocation-status" class="hidden flex items-center justify-center gap-3 text-center bg-yellow-100 text-yellow-800 p-3 rounded-lg text-sm mt-4">
-            <i data-lucide="alert-triangle" class="h-5 w-5 flex-shrink-0"></i>
-            <span id="geolocation-status-message"></span>
-        </div>
+    <div id="map-container" class="relative overflow-hidden rounded-lg" style="transform-origin: center center;">
+        <div id="map" class="w-full" style="height: 400px;"></div>
+    </div>
+    
+    <div id="geolocation-status" class="hidden flex items-center justify-center gap-3 bg-yellow-100 text-yellow-800 p-3 rounded-lg text-sm">
+        <i data-lucide="alert-triangle" class="h-5 w-5"></i>
+        <span id="geolocation-status-message"></span>
+    </div>
 
-        <div id="navigation-section" class="flex flex-col md:flex-row items-center justify-around gap-6 hidden">
-            <div class="compass-container">
-                <div id="compass-arrow" class="compass-arrow"></div>
-            </div>
-            <div id="status-info" class="text-center bg-gray-50 p-4 rounded-lg shadow-inner flex-grow relative">
-                <h3 class="font-semibold text-lg text-gray-700 mb-2">Navigation en cours</h3>
-                <button id="stop-navigate-btn" class="absolute top-2 right-2 flex items-center justify-center gap-1 bg-red-500 text-white font-semibold py-1 px-3 rounded-lg shadow-md hover:bg-red-600">
-                    <i data-lucide="x" class="h-4 w-4"></i>
-                    <span>Quitter</span>
-                </button>
-                <div class="flex flex-wrap items-center justify-center gap-4 my-2">
-                    <button id="prev-waypoint-btn" class="p-2 bg-gray-200 rounded-full hover:bg-gray-300 disabled:opacity-50"><i data-lucide="chevron-left"></i></button>
-                    <p id="status-message" class="text-blue-600 font-semibold">Suivez la flèche rouge</p>
-                    <button id="next-waypoint-btn" class="p-2 bg-gray-200 rounded-full hover:bg-gray-300 disabled:opacity-50"><i data-lucide="chevron-right"></i></button>
-                    <button id="speak-btn" class="p-2 bg-green-200 rounded-full hover:bg-green-300" title="Répéter l'annonce">
-                        <i data-lucide="volume-2" class="h-5 w-5"></i>
-                    </button>
-                </div>
-                <div class="space-y-1">
-                    <p id="next-waypoint-distance-info" class="text-sm text-gray-600"></p>
-                    <p id="total-distance-info" class="text-md font-bold text-gray-800"></p>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
-                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
-                    </div>
-                    <p id="completion-percentage" class="text-sm text-gray-500 text-center"></p>
-                </div>
-                <div class="mt-3 flex flex-wrap items-center justify-center gap-4">
-                    <label class="flex items-center gap-2">
-                        <input type="checkbox" id="autoscale-checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600" checked>
-                        <span class="text-sm text-gray-900">Centrage auto</span>
-                    </label>
-                    <label class="flex items-center gap-2">
-                        <input type="checkbox" id="follow-heading-checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600">
-                        <span class="text-sm text-gray-900">Suivi (cap utilisateur)</span>
-                    </label>
-                </div>
-            </div>
+    <div id="navigation-section" class="flex flex-col md:flex-row items-center justify-around gap-6 hidden">
+        <div class="compass-container">
+            <div id="compass-arrow" class="compass-arrow"></div>
         </div>
-
-        <div id="main-controls" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button id="start-record-btn" class="flex items-center justify-center gap-2 bg-green-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-green-600">
-                <i data-lucide="play-circle"></i><span>Démarrer</span>
+        <div id="status-info" class="text-center bg-gray-50 p-4 rounded-lg shadow-inner flex-grow relative">
+            <h3 class="font-semibold text-lg mb-2">Navigation en cours</h3>
+            <button id="stop-navigate-btn" class="absolute top-2 right-2 flex items-center gap-1 bg-red-500 text-white py-1 px-3 rounded-lg">
+                <i data-lucide="x" class="h-4 w-4"></i><span>Quitter</span>
             </button>
-            <button id="stop-record-btn" class="flex items-center justify-center gap-2 bg-red-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-red-600" disabled>
-                <i data-lucide="stop-circle"></i><span>Arrêter</span>
-            </button>
-            <button id="draw-path-btn" class="flex items-center justify-center gap-2 bg-yellow-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-yellow-600">
-                <i data-lucide="mouse-pointer-2"></i><span>Créer Parcours</span>
-            </button>
-            <label for="load-kmz-input" class="flex items-center justify-center gap-2 bg-purple-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-purple-600 cursor-pointer">
-                <i data-lucide="upload"></i><span>Charger Parcours</span>
-                <input type="file" id="load-kmz-input" class="hidden" accept=".kmz,.kml,.zip">
-            </label>
-            <button id="edit-path-btn" class="flex items-center justify-center gap-2 bg-orange-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-orange-600" disabled>
-                <i data-lucide="edit-3"></i><span>Éditer Parcours</span>
-            </button>
-            <button id="navigate-btn" class="flex items-center justify-center gap-2 bg-indigo-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-indigo-600" disabled>
-                <i data-lucide="navigation"></i><span>Naviguer</span>
-            </button>
-        </div>
-        
-        <div id="draw-controls" class="hidden">
-            <p class="text-center text-blue-600 font-semibold mb-2">Mode création : cliquez sur la ligne pour ajouter un point, clic droit pour supprimer, glissez pour déplacer.</p>
-            <div id="draw-info" class="text-center text-sm text-gray-600 my-2">
-                <p id="last-segment-info"></p>
-                <p id="total-draw-distance-info" class="font-bold"></p>
+            <div class="flex flex-wrap items-center justify-center gap-4 my-2">
+                <button id="prev-waypoint-btn" class="p-2 bg-gray-200 rounded-full disabled:opacity-50"><i data-lucide="chevron-left"></i></button>
+                <p id="status-message" class="text-blue-600 font-semibold">Suivez la flèche rouge</p>
+                <button id="next-waypoint-btn" class="p-2 bg-gray-200 rounded-full disabled:opacity-50"><i data-lucide="chevron-right"></i></button>
+                <button id="speak-btn" class="p-2 bg-green-200 rounded-full" title="Répéter"><i data-lucide="volume-2" class="h-5 w-5"></i></button>
             </div>
-            <div class="flex flex-wrap justify-center gap-4">
-                 <button id="simplify-draw-btn" class="flex items-center gap-2 bg-teal-500 text-white font-semibold py-2 px-6 rounded-lg shadow-md"><i data-lucide="blending"></i><span>Simplifier</span></button>
-                <button id="reverse-draw-btn" class="flex items-center gap-2 bg-cyan-500 text-white font-semibold py-2 px-6 rounded-lg shadow-md"><i data-lucide="repeat"></i><span>Inverser</span></button>
-                 <button id="confirm-draw-btn" class="flex items-center gap-2 bg-green-500 text-white font-semibold py-2 px-6 rounded-lg shadow-md"><i data-lucide="check-circle"></i><span>Valider</span></button>
-                <button id="cancel-draw-btn" class="flex items-center gap-2 bg-red-500 text-white font-semibold py-2 px-6 rounded-lg shadow-md"><i data-lucide="x-circle"></i><span>Annuler</span></button>
+            <div>
+                <p id="next-waypoint-distance-info" class="text-sm text-gray-600"></p>
+                <p id="total-distance-info" class="text-md font-bold"></p>
+                <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width:0%"></div></div>
+                <p id="completion-percentage" class="text-sm text-gray-500"></p>
             </div>
-        </div>
-        
-        <div class="text-center">
-             <button id="download-kmz-btn" class="w-full md:w-1/2 mx-auto flex items-center justify-center gap-2 bg-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-600" disabled>
-                <i data-lucide="download"></i><span>Exporter le Parcours Actuel</span>
-            </button>
-        </div>
-        
-        <div id="orientation-permission-msg" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-r-lg cursor-pointer" role="alert">
-            <p class="font-bold">Action requise</p>
-            <p>Cliquez ici pour activer la boussole.</p>
+            <div class="mt-3 flex flex-wrap justify-center gap-4">
+                <label class="flex items-center gap-2"><input type="checkbox" id="autoscale-checkbox" checked><span class="text-sm">Centrage auto</span></label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="follow-heading-checkbox"><span class="text-sm">Suivi (cap utilisateur)</span></label>
+            </div>
         </div>
     </div>
 
-    <div id="notification-banner" class="hidden fixed top-5 right-5 bg-gray-800 text-white py-3 px-5 rounded-lg shadow-lg transition-all duration-300 opacity-0">
-        <p id="notification-message"></p>
+    <div id="main-controls" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button id="start-record-btn" class="flex items-center justify-center gap-2 bg-green-500 text-white py-3 px-4 rounded-lg"><i data-lucide="play-circle"></i><span>Démarrer</span></button>
+        <button id="stop-record-btn" class="flex items-center justify-center gap-2 bg-red-500 text-white py-3 px-4 rounded-lg" disabled><i data-lucide="stop-circle"></i><span>Arrêter</span></button>
+        <button id="draw-path-btn" class="flex items-center justify-center gap-2 bg-yellow-500 text-white py-3 px-4 rounded-lg"><i data-lucide="mouse-pointer-2"></i><span>Créer Parcours</span></button>
+        <label class="flex items-center justify-center gap-2 bg-purple-500 text-white py-3 px-4 rounded-lg cursor-pointer"><i data-lucide="upload"></i><span>Charger Parcours</span><input type="file" id="load-kmz-input" class="hidden" accept=".kmz,.kml,.zip"></label>
+        <button id="edit-path-btn" class="flex items-center justify-center gap-2 bg-orange-500 text-white py-3 px-4 rounded-lg" disabled><i data-lucide="edit-3"></i><span>Éditer Parcours</span></button>
+        <button id="navigate-btn" class="flex items-center justify-center gap-2 bg-indigo-500 text-white py-3 px-4 rounded-lg" disabled><i data-lucide="navigation"></i><span>Naviguer</span></button>
     </div>
+    
+    <div id="draw-controls" class="hidden">
+        <p class="text-center text-blue-600 font-semibold mb-2">Mode création : cliquez sur la ligne → ajout point, clic droit → supprimer, glisser → déplacer.</p>
+        <div id="draw-info" class="text-center text-sm my-2">
+            <p id="last-segment-info"></p>
+            <p id="total-draw-distance-info" class="font-bold"></p>
+        </div>
+        <div class="flex flex-wrap justify-center gap-4">
+            <button id="simplify-draw-btn" class="flex items-center gap-2 bg-teal-500 text-white px-6 py-2 rounded-lg"><i data-lucide="blending"></i><span>Simplifier</span></button>
+            <button id="reverse-draw-btn" class="flex items-center gap-2 bg-cyan-500 text-white px-6 py-2 rounded-lg"><i data-lucide="repeat"></i><span>Inverser</span></button>
+            <button id="confirm-draw-btn" class="flex items-center gap-2 bg-green-500 text-white px-6 py-2 rounded-lg"><i data-lucide="check-circle"></i><span>Valider</span></button>
+            <button id="cancel-draw-btn" class="flex items-center gap-2 bg-red-500 text-white px-6 py-2 rounded-lg"><i data-lucide="x-circle"></i><span>Annuler</span></button>
+        </div>
+    </div>
+    
+    <div class="text-center">
+        <button id="download-kmz-btn" class="w-full md:w-1/2 mx-auto flex items-center justify-center gap-2 bg-blue-500 text-white py-3 px-4 rounded-lg" disabled><i data-lucide="download"></i><span>Exporter le Parcours Actuel</span></button>
+    </div>
+    
+    <div id="orientation-permission-msg" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-r-lg cursor-pointer">
+        <p class="font-bold">Action requise</p>
+        <p>Cliquez ici pour activer la boussole.</p>
+    </div>
+</div>
 
-    <script>
-        lucide.createIcons();
+<div id="notification-banner" class="hidden fixed top-5 right-5 bg-gray-800 text-white py-3 px-5 rounded-lg shadow-lg transition-all duration-300 opacity-0">
+    <p id="notification-message"></p>
+</div>
 
-        // ---------- VARIABLES GLOBALES ----------
-        let map;
-        let userMarker;
-        let recordedPath = [];
-        let recordedPolyline;
-        let navigationPath = [];
-        let navigationPolyline;
-        let navigationTracePath = [];
-        let navigationTracePolyline;
-        let totalNavigationDistance = 0;
-        let targetMarker = null;
-        let currentTargetIndex = -1;
-        let watchId;
-        
-        let isRecording = false;
-        let isNavigating = false;
-        let isDrawing = false;
-        let geolocationAvailable = true;
-        let isAutoscaleEnabled = true;
-        let isFollowHeadingEnabled = false;
+<script>
+    lucide.createIcons();
 
-        let lastPositionForCourse = null;
-        let isOrientationSupported = false;
-        let userCourse = 0;
-        
-        let drawnPath = [];
-        let drawnPolyline;
-        let drawnPolylineHitbox; 
-        let drawnMarkers = [];
-
-        // Lissage boussole
-        let currentCompassRotation = 0;
-        let targetCompassRotation = 0;
-        let compassAnimationFrame = null;
-        const COMPASS_SMOOTHING_FACTOR = 0.15;
-
-        // Synthèse vocale
-        let lastSpokenTargetIndex = -1;
-        let speechSynth = window.speechSynthesis;
-        let speaking = false;
-
-        // DOM elements
-        const startBtn = document.getElementById('start-record-btn');
-        const stopBtn = document.getElementById('stop-record-btn');
-        const downloadBtn = document.getElementById('download-kmz-btn');
-        const loadInput = document.getElementById('load-kmz-input');
-        const drawBtn = document.getElementById('draw-path-btn');
-        const confirmDrawBtn = document.getElementById('confirm-draw-btn');
-        const cancelDrawBtn = document.getElementById('cancel-draw-btn');
-        const simplifyDrawBtn = document.getElementById('simplify-draw-btn');
-        const reverseDrawBtn = document.getElementById('reverse-draw-btn');
-        const mainControls = document.getElementById('main-controls');
-        const drawControls = document.getElementById('draw-controls');
-        const mapElement = document.getElementById('map');
-        const geolocationStatusDiv = document.getElementById('geolocation-status');
-        const geolocationStatusMessage = document.getElementById('geolocation-status-message');
-        const compassArrow = document.getElementById('compass-arrow');
-        const navigationSection = document.getElementById('navigation-section');
-        const statusMessage = document.getElementById('status-message');
-        const nextWaypointDistanceInfo = document.getElementById('next-waypoint-distance-info');
-        const totalDistanceInfo = document.getElementById('total-distance-info');
-        const progressBar = document.getElementById('progress-bar');
-        const completionPercentage = document.getElementById('completion-percentage');
-        const orientationMsg = document.getElementById('orientation-permission-msg');
-        const prevWaypointBtn = document.getElementById('prev-waypoint-btn');
-        const nextWaypointBtn = document.getElementById('next-waypoint-btn');
-        const stopNavigateBtn = document.getElementById('stop-navigate-btn');
-        const autoscaleCheckbox = document.getElementById('autoscale-checkbox');
-        const followHeadingCheckbox = document.getElementById('follow-heading-checkbox');
-        const notificationBanner = document.getElementById('notification-banner');
-        const notificationMessage = document.getElementById('notification-message');
-        const speakBtn = document.getElementById('speak-btn');
-        let notificationTimeout;
-
-        // ---------- UTILITAIRES ----------
-        function showNotification(message, duration = 3000, isError = false) {
-            notificationMessage.textContent = message;
-            notificationBanner.classList.remove('bg-red-500', 'bg-gray-800');
-            notificationBanner.classList.add(isError ? 'bg-red-500' : 'bg-gray-800');
-            notificationBanner.classList.remove('hidden', 'opacity-0');
-            clearTimeout(notificationTimeout);
-            notificationTimeout = setTimeout(() => {
-                notificationBanner.classList.add('opacity-0');
-                setTimeout(() => notificationBanner.classList.add('hidden'), 300);
-            }, duration);
+    // ======================== VARIABLES ========================
+    let map, userMarker;
+    let recordedPath = [], recordedPolyline;
+    let navigationPath = [], navigationPolyline, navigationTracePath = [], navigationTracePolyline;
+    let totalNavigationDistance = 0, targetMarker = null, currentTargetIndex = -1, watchId;
+    let isRecording = false, isNavigating = false, isDrawing = false, geolocationAvailable = true;
+    let isAutoscaleEnabled = true, isFollowHeadingEnabled = false;
+    let lastPositionForCourse = null, isOrientationSupported = false, userCourse = 0;
+    let drawnPath = [], drawnPolyline, drawnPolylineHitbox, drawnMarkers = [];
+    
+    // Lissage boussole
+    let currentCompassRotation = 0, targetCompassRotation = 0, compassAnimationFrame = null;
+    const COMPASS_SMOOTHING_FACTOR = 0.15;
+    
+    // Synthèse vocale
+    let lastSpokenTargetIndex = -1, speechSynth = window.speechSynthesis, speaking = false;
+    
+    // Rotation carte (CSS)
+    const mapContainer = document.getElementById('map-container');
+    
+    // DOM
+    const startBtn = document.getElementById('start-record-btn'), stopBtn = document.getElementById('stop-record-btn');
+    const downloadBtn = document.getElementById('download-kmz-btn'), loadInput = document.getElementById('load-kmz-input');
+    const drawBtn = document.getElementById('draw-path-btn'), confirmDrawBtn = document.getElementById('confirm-draw-btn');
+    const cancelDrawBtn = document.getElementById('cancel-draw-btn'), simplifyDrawBtn = document.getElementById('simplify-draw-btn');
+    const reverseDrawBtn = document.getElementById('reverse-draw-btn'), mainControls = document.getElementById('main-controls');
+    const drawControls = document.getElementById('draw-controls'), mapElement = document.getElementById('map');
+    const geolocationStatusDiv = document.getElementById('geolocation-status'), geolocationStatusMessage = document.getElementById('geolocation-status-message');
+    const compassArrow = document.getElementById('compass-arrow'), navigationSection = document.getElementById('navigation-section');
+    const statusMessage = document.getElementById('status-message'), nextWaypointDistanceInfo = document.getElementById('next-waypoint-distance-info');
+    const totalDistanceInfo = document.getElementById('total-distance-info'), progressBar = document.getElementById('progress-bar');
+    const completionPercentage = document.getElementById('completion-percentage'), orientationMsg = document.getElementById('orientation-permission-msg');
+    const prevWaypointBtn = document.getElementById('prev-waypoint-btn'), nextWaypointBtn = document.getElementById('next-waypoint-btn');
+    const stopNavigateBtn = document.getElementById('stop-navigate-btn'), autoscaleCheckbox = document.getElementById('autoscale-checkbox');
+    const followHeadingCheckbox = document.getElementById('follow-heading-checkbox'), speakBtn = document.getElementById('speak-btn');
+    const notificationBanner = document.getElementById('notification-banner'), notificationMessage = document.getElementById('notification-message');
+    let notificationTimeout;
+    
+    // ======================== UTILITAIRES ========================
+    function showNotification(msg, dur = 3000, isErr = false) {
+        notificationMessage.textContent = msg;
+        notificationBanner.classList.remove('bg-red-500', 'bg-gray-800');
+        notificationBanner.classList.add(isErr ? 'bg-red-500' : 'bg-gray-800');
+        notificationBanner.classList.remove('hidden', 'opacity-0');
+        clearTimeout(notificationTimeout);
+        notificationTimeout = setTimeout(() => {
+            notificationBanner.classList.add('opacity-0');
+            setTimeout(() => notificationBanner.classList.add('hidden'), 300);
+        }, dur);
+    }
+    
+    function formatDistance(d) { return d > 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`; }
+    function toRad(d) { return d * Math.PI / 180; }
+    function toDeg(r) { return r * 180 / Math.PI; }
+    function calculateDistance(p1, p2) {
+        const R = 6371e3;
+        const [lat1, lon1] = [toRad(p1[0]), toRad(p1[1])];
+        const [lat2, lon2] = [toRad(p2[0]), toRad(p2[1])];
+        const dLat = lat2 - lat1, dLon = lon2 - lon1;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+    function calculateBearing(p1, p2) {
+        const [lat1, lon1] = [toRad(p1[0]), toRad(p1[1])];
+        const [lat2, lon2] = [toRad(p2[0]), toRad(p2[1])];
+        const y = Math.sin(lon2-lon1) * Math.cos(lat2);
+        const x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1);
+        return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+    function calculateTurnAngle(p1,p2,p3) {
+        let a = calculateBearing(p1,p2), b = calculateBearing(p2,p3);
+        let diff = Math.abs(a-b); if(diff>180) diff=360-diff;
+        return diff;
+    }
+    function expandBoundsByMeters(bounds, m) {
+        const perDeg = 111132.954;
+        const latOff = m / perDeg;
+        const lonOff = m / (perDeg * Math.cos(bounds.getCenter().lat * Math.PI/180));
+        return L.latLngBounds([bounds.getSouthWest().lat - latOff, bounds.getSouthWest().lng - lonOff],
+                               [bounds.getNorthEast().lat + latOff, bounds.getNorthEast().lng + lonOff]);
+    }
+    
+    // ======================== ROTATION CARTE & ORIENTATION MARQUEUR ========================
+    function setMapRotation(deg) {
+        if (!mapContainer) return;
+        mapContainer.style.transform = `rotate(${deg}deg)`;
+    }
+    
+    function updateUserMarkerOrientation(deg) {
+        if (!userMarker || !userMarker._icon) return;
+        let svg = userMarker._icon.querySelector('svg');
+        if (!svg) return;
+        if (isFollowHeadingEnabled) {
+            svg.style.transform = `rotate(0deg)`;
+        } else {
+            svg.style.transform = `rotate(${deg}deg)`;
         }
-
-        function formatDistance(d) { return d > 1000 ? `${(d/1000).toFixed(2)} km` : `${Math.round(d)} m`; }
-        function toRad(d) { return d * Math.PI / 180; }
-        function toDeg(r) { return r * 180 / Math.PI; }
-        function calculateDistance(p1, p2) {
-            const R = 6371e3;
-            const [lat1, lon1] = [toRad(p1[0]), toRad(p1[1])];
-            const [lat2, lon2] = [toRad(p2[0]), toRad(p2[1])];
-            const dLat = lat2 - lat1;
-            const dLon = lon2 - lon1;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
-        function calculateBearing(p1, p2) {
-            const [lat1, lon1] = [toRad(p1[0]), toRad(p1[1])];
-            const [lat2, lon2] = [toRad(p2[0]), toRad(p2[1])];
-            const y = Math.sin(lon2-lon1) * Math.cos(lat2);
-            const x = Math.cos(lat1)*Math.sin(lat2) - Math.sin(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1);
-            return (toDeg(Math.atan2(y, x)) + 360) % 360;
-        }
-        function calculateTurnAngle(p1, p2, p3) {
-            let a = calculateBearing(p1, p2);
-            let b = calculateBearing(p2, p3);
-            let diff = Math.abs(a - b);
-            if (diff > 180) diff = 360 - diff;
-            return diff;
-        }
-        function expandBoundsByMeters(bounds, m) {
-            const perDeg = 111132.954;
-            const latOff = m / perDeg;
-            const lonOff = m / (perDeg * Math.cos(bounds.getCenter().lat * Math.PI/180));
-            return L.latLngBounds([bounds.getSouthWest().lat - latOff, bounds.getSouthWest().lng - lonOff],
-                                   [bounds.getNorthEast().lat + latOff, bounds.getNorthEast().lng + lonOff]);
-        }
-
-        // ---------- SYNTHÈSE VOCALE ----------
-        function getClockDirection(relativeAngleDeg) {
-            let hours = Math.round(relativeAngleDeg / 30) % 12;
-            if (hours === 0) hours = 12;
-            return `${hours} heure${hours > 1 ? 's' : ''}`;
-        }
-
-        function speakFullGuidance(pointIdx, totalPoints, distanceMeters, bearingToTarget, userHeading) {
-            if (!speechSynth) return;
-            if (speaking) speechSynth.cancel();
-            let relAngle = (bearingToTarget - userHeading + 360) % 360;
-            let clockDir = getClockDirection(relAngle);
-            let distText = formatDistance(distanceMeters);
-            let message = `Point ${pointIdx} sur ${totalPoints}, direction ${clockDir}, distance ${distText}`;
-            let utterance = new SpeechSynthesisUtterance(message);
-            utterance.lang = 'fr-FR';
-            utterance.rate = 0.9;
-            speaking = true;
-            utterance.onend = () => { speaking = false; };
-            speechSynth.speak(utterance);
-        }
-
-        function announceCurrentTarget() {
-            if (!isNavigating || currentTargetIndex < 0 || !userMarker) return;
-            const target = navigationPath[currentTargetIndex];
-            const userPos = userMarker.getLatLng();
-            const dist = calculateDistance([userPos.lat, userPos.lng], target);
-            const bearing = calculateBearing([userPos.lat, userPos.lng], target);
-            const heading = isOrientationSupported ? userCourse : (userCourse || 0);
-            speakFullGuidance(currentTargetIndex+1, navigationPath.length, dist, bearing, heading);
-        }
-
-        // ---------- ROTATION CARTE ----------
-        function setMapRotation(deg) { if (map.setBearing) map.setBearing(deg); }
-        function updateMapOrientation() {
-            if (!isNavigating || !isFollowHeadingEnabled) {
-                if (!isFollowHeadingEnabled && map.setBearing) map.setBearing(0);
-                return;
+    }
+    
+    function updateMapOrientation() {
+        if (!isNavigating || !isFollowHeadingEnabled) {
+            if (!isFollowHeadingEnabled) setMapRotation(0);
+            if (userMarker && userMarker._icon && !isFollowHeadingEnabled) {
+                let heading = isOrientationSupported ? userCourse : (userCourse || 0);
+                updateUserMarkerOrientation(heading);
             }
-            let heading = userCourse;
-            if (!isNaN(heading)) setMapRotation(heading);
+            return;
         }
-
-        // ---------- INITIALISATION CARTE ----------
-        function initMap() {
-            map = L.map('map', { rotate: true, rotateControl: false }).setView([48.8566, 2.3522], 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-            }).addTo(map);
-            map.on('click', onMapClick);
+        let heading = isOrientationSupported ? userCourse : (userCourse || 0);
+        setMapRotation(-heading);
+        updateUserMarkerOrientation(0);
+    }
+    
+    // ======================== INIT CARTE ========================
+    function initMap() {
+        map = L.map('map').setView([48.8566, 2.3522], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+        }).addTo(map);
+        map.on('click', onMapClick);
+        if (map.setBearing) map.setBearing(0);
+    }
+    
+    // ======================== UI ========================
+    function updateUIState() {
+        const editBtn = document.getElementById('edit-path-btn');
+        const navigateBtn = document.getElementById('navigate-btn');
+        const hasPath = recordedPath.length > 0;
+        const busy = isRecording || isNavigating || isDrawing;
+        startBtn.disabled = busy || !geolocationAvailable;
+        stopBtn.disabled = !isRecording;
+        drawBtn.disabled = busy;
+        loadInput.disabled = busy;
+        loadInput.parentElement.classList.toggle('disabled-button', busy);
+        downloadBtn.disabled = !hasPath || busy;
+        editBtn.disabled = !hasPath || busy;
+        navigateBtn.disabled = !hasPath || busy;
+        if (isDrawing) {
+            mainControls.classList.add('hidden');
+            drawControls.classList.remove('hidden');
+            mapElement.classList.add('drawing-mode');
+        } else {
+            mainControls.classList.remove('hidden');
+            drawControls.classList.add('hidden');
+            mapElement.classList.remove('drawing-mode');
         }
-
-        // ---------- UI ----------
-        function updateUIState() {
-            const editBtn = document.getElementById('edit-path-btn');
-            const navigateBtn = document.getElementById('navigate-btn');
-            const hasPath = recordedPath.length > 0;
-            const busy = isRecording || isNavigating || isDrawing;
-            startBtn.disabled = busy || !geolocationAvailable;
-            stopBtn.disabled = !isRecording;
-            drawBtn.disabled = busy;
-            loadInput.disabled = busy;
-            loadInput.parentElement.classList.toggle('disabled-button', busy);
-            downloadBtn.disabled = !hasPath || busy;
-            editBtn.disabled = !hasPath || busy;
-            navigateBtn.disabled = !hasPath || busy;
-            if (isDrawing) {
-                mainControls.classList.add('hidden');
-                drawControls.classList.remove('hidden');
-                mapElement.classList.add('drawing-mode');
-            } else {
-                mainControls.classList.remove('hidden');
-                drawControls.classList.add('hidden');
-                mapElement.classList.remove('drawing-mode');
-            }
+    }
+    
+    // ======================== GEOLOCALISATION ========================
+    function startGeolocation() {
+        if (!navigator.geolocation) { handlePositionError({ message: "Non supporté" }); return; }
+        watchId = navigator.geolocation.watchPosition(handlePositionUpdate, handlePositionError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    }
+    
+    function handlePositionUpdate(pos) {
+        const { latitude, longitude } = pos.coords;
+        const latLng = [latitude, longitude];
+        if (!userMarker) {
+            map.setView(latLng, 16);
+            const userIcon = L.divIcon({
+                className: 'user-marker-icon',
+                html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#3b82f6" stroke="white" stroke-width="1.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>`,
+                iconSize: [28,28], iconAnchor: [14,14]
+            });
+            userMarker = L.marker(latLng, { icon: userIcon, pane: 'markerPane', zIndexOffset: 1000 }).addTo(map);
+        } else {
+            userMarker.setLatLng(latLng);
         }
-
-        // ---------- GEOLOCALISATION ----------
-        function startGeolocation() {
-            if (!navigator.geolocation) {
-                handlePositionError({ message: "Géolocalisation non supportée" });
-                return;
-            }
-            watchId = navigator.geolocation.watchPosition(handlePositionUpdate, handlePositionError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+        if (isRecording) {
+            recordedPath.push(latLng);
+            if (!recordedPolyline) recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
+            else recordedPolyline.addLatLng(latLng);
         }
-
-        function handlePositionUpdate(pos) {
-            const { latitude, longitude } = pos.coords;
-            const latLng = [latitude, longitude];
-            if (!userMarker) {
-                map.setView(latLng, 16);
-                const userIcon = L.divIcon({
-                    className: 'user-marker-icon',
-                    html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#3b82f6" stroke="white" stroke-width="1.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>`,
-                    iconSize: [28,28], iconAnchor: [14,14]
-                });
-                userMarker = L.marker(latLng, { icon: userIcon, pane: 'markerPane', zIndexOffset: 1000 }).addTo(map);
-            } else {
-                userMarker.setLatLng(latLng);
-            }
-            if (isRecording) {
-                recordedPath.push(latLng);
-                if (!recordedPolyline) recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
-                else recordedPolyline.addLatLng(latLng);
-            }
-            if (isNavigating || isRecording) {
-                navigationTracePath.push(latLng);
-                if (!navigationTracePolyline) navigationTracePolyline = L.polyline(navigationTracePath, { color: 'green', weight: 6, opacity: 0.7 }).addTo(map);
-                else navigationTracePolyline.addLatLng(latLng);
-
-                if (!isOrientationSupported) {
-                    if (lastPositionForCourse) {
-                        let moved = calculateDistance(lastPositionForCourse, latLng);
-                        if (moved > 5) {
-                            userCourse = calculateBearing(lastPositionForCourse, latLng);
-                            updateCompass(userCourse);
-                            updateUserMarkerOrientation(userCourse);
-                            lastPositionForCourse = latLng;
-                            if (statusMessage.textContent.startsWith("Déplacez-vous")) statusMessage.textContent = "Suivez la flèche rouge";
-                            updateMapOrientation();
-                        }
-                    } else {
+        if (isNavigating || isRecording) {
+            navigationTracePath.push(latLng);
+            if (!navigationTracePolyline) navigationTracePolyline = L.polyline(navigationTracePath, { color: 'green', weight: 6, opacity: 0.7 }).addTo(map);
+            else navigationTracePolyline.addLatLng(latLng);
+            if (!isOrientationSupported) {
+                if (lastPositionForCourse) {
+                    let moved = calculateDistance(lastPositionForCourse, latLng);
+                    if (moved > 5) {
+                        userCourse = calculateBearing(lastPositionForCourse, latLng);
+                        updateCompass(userCourse);
+                        if (!isFollowHeadingEnabled) updateUserMarkerOrientation(userCourse);
                         lastPositionForCourse = latLng;
+                        if (statusMessage.textContent.startsWith("Déplacez-vous")) statusMessage.textContent = "Suivez la flèche rouge";
+                        updateMapOrientation();
                     }
+                } else {
+                    lastPositionForCourse = latLng;
                 }
-                updateNavigation(latLng);
             }
+            updateNavigation(latLng);
         }
-
-        function handlePositionError(err) {
-            geolocationStatusMessage.textContent = "Géolocalisation bloquée. Enregistrement/navigation désactivés.";
-            geolocationStatusDiv.classList.remove('hidden');
-            lucide.createIcons();
-            geolocationAvailable = false;
-            updateUIState();
-        }
-
-        function updateUserMarkerOrientation(deg) {
-            if (!userMarker || !userMarker._icon) return;
-            let svg = userMarker._icon.querySelector('svg');
-            if (svg) svg.style.transform = `rotate(${deg}deg)`;
-        }
-
-        // ---------- DESSIN (COMPLET) ----------
-        function startDrawing() {
-            isDrawing = true;
+    }
+    
+    function handlePositionError(err) {
+        geolocationStatusMessage.textContent = "Géolocalisation bloquée. Enregistrement/navigation désactivés.";
+        geolocationStatusDiv.classList.remove('hidden');
+        lucide.createIcons();
+        geolocationAvailable = false;
+        updateUIState();
+    }
+    
+    // ======================== DESSIN ========================
+    function startDrawing() { isDrawing = true; if(recordedPolyline) map.removeLayer(recordedPolyline); recordedPolyline=null; updateUIState(); updateDrawingInfo(); }
+    function stopDrawing(save) {
+        if (save && drawnPath.length) {
+            recordedPath = [...drawnPath];
             if (recordedPolyline) map.removeLayer(recordedPolyline);
-            recordedPolyline = null;
-            updateUIState();
+            recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
+            let kml = generateKmlString(recordedPath);
+            if (kml) localStorage.setItem('lastKmlContent', kml);
+        } else if (recordedPath.length) {
+            recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
+        }
+        if (drawnPolyline) map.removeLayer(drawnPolyline);
+        if (drawnPolylineHitbox) map.removeLayer(drawnPolylineHitbox);
+        drawnMarkers.forEach(m => map.removeLayer(m));
+        drawnPath = []; drawnPolyline = null; drawnPolylineHitbox = null; drawnMarkers = [];
+        isDrawing = false;
+        updateUIState();
+    }
+    function onMarkerDrag(e) {
+        let idx = drawnMarkers.indexOf(e.target);
+        if (idx > -1) {
+            drawnPath[idx] = [e.target.getLatLng().lat, e.target.getLatLng().lng];
+            drawnPolyline.setLatLngs(drawnPath);
+            drawnPolylineHitbox.setLatLngs(drawnPath);
             updateDrawingInfo();
         }
-
-        function stopDrawing(save) {
-            if (save && drawnPath.length) {
-                recordedPath = [...drawnPath];
-                if (recordedPolyline) map.removeLayer(recordedPolyline);
-                recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
-                let kml = generateKmlString(recordedPath);
-                if (kml) localStorage.setItem('lastKmlContent', kml);
-            } else if (recordedPath.length) {
-                recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
-            }
-            if (drawnPolyline) map.removeLayer(drawnPolyline);
-            if (drawnPolylineHitbox) map.removeLayer(drawnPolylineHitbox);
-            drawnMarkers.forEach(m => map.removeLayer(m));
-            drawnPath = []; drawnPolyline = null; drawnPolylineHitbox = null; drawnMarkers = [];
-            isDrawing = false;
-            updateUIState();
+    }
+    function onPolylineClick(e) {
+        if (!isDrawing) return;
+        let clickP = e.latlng, minDist = Infinity, segIdx = -1;
+        for (let i=0; i<drawnPath.length-1; i++) {
+            let p1 = map.latLngToLayerPoint(L.latLng(drawnPath[i]));
+            let p2 = map.latLngToLayerPoint(L.latLng(drawnPath[i+1]));
+            let cp = map.latLngToLayerPoint(clickP);
+            let d = L.LineUtil.pointToSegmentDistance(cp, p1, p2);
+            if (d < minDist) { minDist = d; segIdx = i; }
         }
-
-        function onMarkerDrag(e) {
-            let idx = drawnMarkers.indexOf(e.target);
-            if (idx > -1) {
-                drawnPath[idx] = [e.target.getLatLng().lat, e.target.getLatLng().lng];
-                drawnPolyline.setLatLngs(drawnPath);
-                drawnPolylineHitbox.setLatLngs(drawnPath);
-                updateDrawingInfo();
-            }
-        }
-
-        function onPolylineClick(e) {
-            if (!isDrawing) return;
-            let clickP = e.latlng;
-            let minDist = Infinity, segIdx = -1;
-            for (let i=0; i<drawnPath.length-1; i++) {
-                let p1 = map.latLngToLayerPoint(L.latLng(drawnPath[i]));
-                let p2 = map.latLngToLayerPoint(L.latLng(drawnPath[i+1]));
-                let cp = map.latLngToLayerPoint(clickP);
-                let d = L.LineUtil.pointToSegmentDistance(cp, p1, p2);
-                if (d < minDist) { minDist = d; segIdx = i; }
-            }
-            if (segIdx !== -1) {
-                drawnPath.splice(segIdx+1, 0, [clickP.lat, clickP.lng]);
-                redrawDrawingLayer();
-            }
-        }
-
-        function onMapClick(e) {
-            if (!isDrawing) return;
-            drawnPath.push([e.latlng.lat, e.latlng.lng]);
-            redrawDrawingLayer();
-        }
-
-        function deleteDrawnPoint(e) {
-            let idx = drawnMarkers.indexOf(e.target);
-            if (idx > -1) {
-                drawnMarkers.splice(idx,1);
-                drawnPath.splice(idx,1);
-                map.removeLayer(e.target);
-                drawnPolyline.setLatLngs(drawnPath);
-                drawnPolylineHitbox.setLatLngs(drawnPath);
-                updateDrawingInfo();
-            }
-        }
-
-        function updateDrawingInfo() {
-            let last = 0, total = 0;
-            if (drawnPath.length >= 2) last = calculateDistance(drawnPath[drawnPath.length-2], drawnPath[drawnPath.length-1]);
-            for (let i=0; i<drawnPath.length-1; i++) total += calculateDistance(drawnPath[i], drawnPath[i+1]);
-            document.getElementById('last-segment-info').textContent = `Dernier segment : ${formatDistance(last)}`;
-            document.getElementById('total-draw-distance-info').textContent = `Distance totale : ${formatDistance(total)}`;
-        }
-
-        function redrawDrawingLayer() {
-            if (drawnPolyline) map.removeLayer(drawnPolyline);
-            if (drawnPolylineHitbox) map.removeLayer(drawnPolylineHitbox);
-            drawnMarkers.forEach(m => map.removeLayer(m));
-            drawnMarkers = [];
-            if (drawnPath.length) {
-                drawnPolylineHitbox = L.polyline(drawnPath, { color: 'transparent', weight: 25 }).addTo(map);
-                drawnPolylineHitbox.on('click', onPolylineClick);
-                drawnPolyline = L.polyline(drawnPath, { color: 'orange', dashArray: '5,10' }).addTo(map);
-                drawnMarkers = drawnPath.map(p => {
-                    let m = L.marker(p, {
-                        draggable: true,
-                        icon: L.divIcon({
-                            className: 'custom-waypoint',
-                            html: '<div style="width:12px;height:12px;background:#f97316;border:2px solid orange;border-radius:50%;"></div>',
-                            iconSize: [12,12], iconAnchor: [6,6]
-                        })
-                    }).addTo(map);
-                    m.on('contextmenu', deleteDrawnPoint).on('drag', onMarkerDrag);
-                    m.on('mousedown', () => map.dragging.disable()).on('mouseup', () => map.dragging.enable());
-                    return m;
-                });
-            }
+        if (segIdx !== -1) { drawnPath.splice(segIdx+1, 0, [clickP.lat, clickP.lng]); redrawDrawingLayer(); }
+    }
+    function onMapClick(e) { if (!isDrawing) return; drawnPath.push([e.latlng.lat, e.latlng.lng]); redrawDrawingLayer(); }
+    function deleteDrawnPoint(e) {
+        let idx = drawnMarkers.indexOf(e.target);
+        if (idx > -1) {
+            drawnMarkers.splice(idx,1); drawnPath.splice(idx,1); map.removeLayer(e.target);
+            drawnPolyline.setLatLngs(drawnPath); drawnPolylineHitbox.setLatLngs(drawnPath);
             updateDrawingInfo();
         }
-
-        function simplifyDrawPath() {
-            if (drawnPath.length < 3) { showNotification("Pas assez de points",2000,true); return; }
-            let simple = [drawnPath[0]];
-            let acc = 0;
-            for (let i=1; i<drawnPath.length-1; i++) {
-                acc += calculateDistance(drawnPath[i-1], drawnPath[i]);
-                let angle = calculateTurnAngle(drawnPath[i-1], drawnPath[i], drawnPath[i+1]);
-                if ((angle > 20 && acc >= 50) || acc >= 100) {
-                    simple.push(drawnPath[i]);
-                    acc = 0;
-                }
-            }
-            simple.push(drawnPath[drawnPath.length-1]);
-            let old = drawnPath.length;
-            drawnPath = simple;
-            redrawDrawingLayer();
-            showNotification(`Simplifié de ${old} à ${drawnPath.length} points`);
+    }
+    function updateDrawingInfo() {
+        let last = 0, total = 0;
+        if (drawnPath.length >= 2) last = calculateDistance(drawnPath[drawnPath.length-2], drawnPath[drawnPath.length-1]);
+        for (let i=0; i<drawnPath.length-1; i++) total += calculateDistance(drawnPath[i], drawnPath[i+1]);
+        document.getElementById('last-segment-info').textContent = `Dernier segment : ${formatDistance(last)}`;
+        document.getElementById('total-draw-distance-info').textContent = `Distance totale : ${formatDistance(total)}`;
+    }
+    function redrawDrawingLayer() {
+        if (drawnPolyline) map.removeLayer(drawnPolyline);
+        if (drawnPolylineHitbox) map.removeLayer(drawnPolylineHitbox);
+        drawnMarkers.forEach(m => map.removeLayer(m));
+        drawnMarkers = [];
+        if (drawnPath.length) {
+            drawnPolylineHitbox = L.polyline(drawnPath, { color: 'transparent', weight: 25 }).addTo(map);
+            drawnPolylineHitbox.on('click', onPolylineClick);
+            drawnPolyline = L.polyline(drawnPath, { color: 'orange', dashArray: '5,10' }).addTo(map);
+            drawnMarkers = drawnPath.map(p => {
+                let m = L.marker(p, { draggable: true, icon: L.divIcon({ className: 'custom-waypoint', html: '<div style="width:12px;height:12px;background:#f97316;border:2px solid orange;border-radius:50%;"></div>', iconSize: [12,12], iconAnchor: [6,6] }) }).addTo(map);
+                m.on('contextmenu', deleteDrawnPoint).on('drag', onMarkerDrag);
+                m.on('mousedown', () => map.dragging.disable()).on('mouseup', () => map.dragging.enable());
+                return m;
+            });
         }
-
-        function reverseDrawPath() {
-            if (drawnPath.length >= 2) { drawnPath.reverse(); redrawDrawingLayer(); showNotification("Parcours inversé"); }
-            else showNotification("Pas assez de points",2000,true);
+        updateDrawingInfo();
+    }
+    function simplifyDrawPath() {
+        if (drawnPath.length < 3) { showNotification("Pas assez de points",2000,true); return; }
+        let simple = [drawnPath[0]], acc = 0;
+        for (let i=1; i<drawnPath.length-1; i++) {
+            acc += calculateDistance(drawnPath[i-1], drawnPath[i]);
+            let angle = calculateTurnAngle(drawnPath[i-1], drawnPath[i], drawnPath[i+1]);
+            if ((angle > 20 && acc >= 50) || acc >= 100) { simple.push(drawnPath[i]); acc = 0; }
         }
-
-        // ---------- BOUSSOLE LISSÉE ----------
-        function animateCompass() {
-            let diff = targetCompassRotation - currentCompassRotation;
-            if (diff > 180) diff -= 360;
-            if (diff < -180) diff += 360;
-            currentCompassRotation += diff * COMPASS_SMOOTHING_FACTOR;
-            currentCompassRotation = ((currentCompassRotation % 360) + 360) % 360;
-            compassArrow.style.transform = `rotate(${currentCompassRotation}deg)`;
-            if (Math.abs(diff) > 0.5) {
-                compassAnimationFrame = requestAnimationFrame(animateCompass);
-            } else {
-                if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
-                compassAnimationFrame = null;
-                compassArrow.style.transform = `rotate(${targetCompassRotation}deg)`;
-                currentCompassRotation = targetCompassRotation;
-            }
+        simple.push(drawnPath[drawnPath.length-1]);
+        let old = drawnPath.length; drawnPath = simple; redrawDrawingLayer();
+        showNotification(`Simplifié de ${old} à ${drawnPath.length} points`);
+    }
+    function reverseDrawPath() { if (drawnPath.length >= 2) { drawnPath.reverse(); redrawDrawingLayer(); showNotification("Parcours inversé"); } else showNotification("Pas assez de points",2000,true); }
+    
+    // ======================== BOUSSOLE LISSÉE (FLÈCHE ROUGE) ========================
+    function animateCompass() {
+        let diff = targetCompassRotation - currentCompassRotation;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+        currentCompassRotation += diff * COMPASS_SMOOTHING_FACTOR;
+        currentCompassRotation = ((currentCompassRotation % 360) + 360) % 360;
+        compassArrow.style.transform = `rotate(${currentCompassRotation}deg)`;
+        if (Math.abs(diff) > 0.5) {
+            compassAnimationFrame = requestAnimationFrame(animateCompass);
+        } else {
+            if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
+            compassAnimationFrame = null;
+            compassArrow.style.transform = `rotate(${targetCompassRotation}deg)`;
+            currentCompassRotation = targetCompassRotation;
         }
-        function setCompassRotation(rot) {
-            targetCompassRotation = ((rot % 360) + 360) % 360;
-            if (!compassAnimationFrame) animateCompass();
+    }
+    function setCompassRotation(rot) {
+        let newTarget = ((rot % 360) + 360) % 360;
+        if (Math.abs(newTarget - targetCompassRotation) < 0.1) return;
+        targetCompassRotation = newTarget;
+        if (!compassAnimationFrame) animateCompass();
+    }
+    function updateCompass(heading) {
+        if (!isNavigating) return;
+        let targetBearing = parseFloat(compassArrow.dataset.targetBearing) || 0;
+        let arrowRot = targetBearing - heading;
+        setCompassRotation(arrowRot);
+    }
+    
+    // ======================== SYNTHÈSE VOCALE ========================
+    function getClockDirection(rel) { let h = Math.round(rel/30) % 12; if (h===0) h=12; return `${h} heure${h>1 ? 's' : ''}`; }
+    function speakFullGuidance(pointIdx, totalPoints, distM, bearingToTarget, userHeading) {
+        if (!speechSynth) return;
+        if (speaking) speechSynth.cancel();
+        let rel = (bearingToTarget - userHeading + 360) % 360;
+        let clock = getClockDirection(rel);
+        let distText = formatDistance(distM);
+        let msg = `Point ${pointIdx} sur ${totalPoints}, direction ${clock}, distance ${distText}`;
+        let utterance = new SpeechSynthesisUtterance(msg);
+        utterance.lang = 'fr-FR'; utterance.rate = 0.9;
+        speaking = true;
+        utterance.onend = () => { speaking = false; };
+        speechSynth.speak(utterance);
+    }
+    function announceCurrentTarget() {
+        if (!isNavigating || currentTargetIndex<0 || !userMarker) return;
+        const target = navigationPath[currentTargetIndex];
+        const userPos = userMarker.getLatLng();
+        const dist = calculateDistance([userPos.lat, userPos.lng], target);
+        const bearing = calculateBearing([userPos.lat, userPos.lng], target);
+        const heading = isOrientationSupported ? userCourse : (userCourse || 0);
+        speakFullGuidance(currentTargetIndex+1, navigationPath.length, dist, bearing, heading);
+    }
+    
+    // Annonce d'arrivée
+    function announceArrival() {
+        if (!speechSynth) return;
+        if (speaking) speechSynth.cancel();
+        let msg = "Vous êtes arrivé à destination.";
+        let utterance = new SpeechSynthesisUtterance(msg);
+        utterance.lang = 'fr-FR'; utterance.rate = 0.9;
+        speaking = true;
+        utterance.onend = () => { speaking = false; };
+        speechSynth.speak(utterance);
+    }
+    
+    // ======================== CONSERVATION DE LA TRACE RÉELLE ========================
+    function keepRealTrace() {
+        if (navigationTracePath.length === 0) return;
+        // Copier la trace réelle dans le parcours enregistré (rouge)
+        recordedPath = [...navigationTracePath];
+        if (recordedPolyline) map.removeLayer(recordedPolyline);
+        recordedPolyline = L.polyline(recordedPath, { color: 'red', weight: 4 }).addTo(map);
+        // Sauvegarder dans localStorage
+        let kml = generateKmlString(recordedPath);
+        if (kml) localStorage.setItem('lastKmlContent', kml);
+        updateUIState();
+        showNotification("Trace réelle sauvegardée. Vous pouvez l'éditer ou l'exporter.", 4000);
+    }
+    
+    // ======================== NAVIGATION ========================
+    function startNavigation(path) {
+        if (path.length < 1) { showNotification("Parcours trop court",3000,true); return; }
+        isNavigating = true;
+        navigationPath = path;
+        currentTargetIndex = 0;
+        navigationTracePath = [];
+        if (navigationTracePolyline) map.removeLayer(navigationTracePolyline);
+        navigationTracePolyline = null;
+        lastPositionForCourse = null;
+        isOrientationSupported = false;
+        currentCompassRotation = 0; targetCompassRotation = 0;
+        if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
+        compassArrow.style.transform = 'rotate(0deg)';
+        totalNavigationDistance = 0;
+        for (let i=0; i<path.length-1; i++) totalNavigationDistance += calculateDistance(path[i], path[i+1]);
+        if (navigationPolyline) map.removeLayer(navigationPolyline);
+        if (path.length > 1) navigationPolyline = L.polyline(path, { color: 'purple', weight:5, opacity:0.8 }).addTo(map);
+        navigationSection.classList.remove('hidden');
+        if (geolocationAvailable) {
+            orientationMsg.classList.remove('hidden');
+            setTimeout(() => { if (isNavigating && !isOrientationSupported) { showNotification("Pas de boussole, direction par déplacements",4000); statusMessage.textContent = "Déplacez-vous"; orientationMsg.classList.add('hidden'); } }, 2000);
+        } else {
+            orientationMsg.classList.add('hidden');
+            compassArrow.parentElement.style.display = 'none';
+            showNotification("Navigation sans GPS",4000);
         }
-        function updateCompass(heading) {
-            if (!isNavigating) return;
-            let targetBearing = parseFloat(compassArrow.dataset.targetBearing) || 0;
-            let arrowRot = targetBearing - heading;
+        updateTargetWaypoint(currentTargetIndex);
+        updateUIState();
+    }
+    
+    function stopNavigation(keepTrace = true) {
+        isNavigating = false;
+        if (keepTrace && navigationTracePath.length > 0) {
+            keepRealTrace(); // Copie la trace verte dans recordedPath
+        }
+        navigationPath = [];
+        totalNavigationDistance = 0;
+        currentTargetIndex = -1;
+        navigationSection.classList.add('hidden');
+        orientationMsg.classList.add('hidden');
+        if (navigationPolyline) map.removeLayer(navigationPolyline);
+        navigationPolyline = null;
+        // On garde la trace polyline (verte) visible
+        // navigationTracePolyline reste sur la carte
+        if (targetMarker) map.removeLayer(targetMarker);
+        targetMarker = null;
+        isOrientationSupported = false;
+        lastPositionForCourse = null;
+        if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
+        setMapRotation(0);
+        nextWaypointDistanceInfo.textContent = "";
+        totalDistanceInfo.textContent = "";
+        progressBar.style.width = '0%';
+        completionPercentage.textContent = "";
+        updateUIState();
+    }
+    
+    function animateSkippedPoint(idx) {
+        if (!navigationPath[idx]) return;
+        let temp = L.circleMarker(navigationPath[idx], { radius:12, color:'#ff9800', weight:3, fillColor:'#ffc107', fillOpacity:0.8, className:'skip-animation' }).addTo(map);
+        setTimeout(() => map.removeLayer(temp), 500);
+    }
+    
+    function updateTargetWaypoint(index) {
+        if (index < 0 || index >= navigationPath.length) return;
+        let old = currentTargetIndex;
+        currentTargetIndex = index;
+        let targetLL = navigationPath[currentTargetIndex];
+        if (!targetMarker) targetMarker = L.circleMarker(targetLL, { radius:8, color:'white', weight:2, fillColor:'#ef4444', fillOpacity:1 }).addTo(map);
+        else targetMarker.setLatLng(targetLL);
+        if (old !== -1 && Math.abs(old-index) > 1) {
+            for (let i=old+1; i<=index; i++) setTimeout(() => animateSkippedPoint(i), i*100);
+            showNotification(`Passage direct au point ${index+1}`,2000);
+        } else if (old !== -1 && old !== index) animateSkippedPoint(index);
+        statusMessage.textContent = `Point Cible : ${currentTargetIndex+1} / ${navigationPath.length}`;
+        if (totalNavigationDistance > 0) {
+            let covered = 0;
+            for (let i=0; i<currentTargetIndex; i++) covered += calculateDistance(navigationPath[i], navigationPath[i+1]);
+            let pct = Math.min(100, (covered/totalNavigationDistance)*100);
+            progressBar.style.width = `${pct}%`;
+            completionPercentage.textContent = `${pct.toFixed(1)} % complété`;
+        }
+        if (userMarker) updateNavigation(userMarker.getLatLng());
+        else { nextWaypointDistanceInfo.textContent = "Distance indisponible"; totalDistanceInfo.textContent = `Distance totale : ${formatDistance(totalNavigationDistance)}`; }
+        prevWaypointBtn.disabled = currentTargetIndex <= 0;
+        nextWaypointBtn.disabled = currentTargetIndex >= navigationPath.length-1;
+        if (lastSpokenTargetIndex !== currentTargetIndex && userMarker) {
+            lastSpokenTargetIndex = currentTargetIndex;
+            announceCurrentTarget();
+        }
+    }
+    
+    function findNextNearbyPoint(current, startIdx) {
+        for (let i=startIdx+1; i<navigationPath.length; i++) {
+            if (calculateDistance(current, navigationPath[i]) <= 50) return i;
+        }
+        return null;
+    }
+    
+    function updateNavigation(currentLatLng) {
+        if (!isNavigating || currentTargetIndex < 0) return;
+        let target = navigationPath[currentTargetIndex];
+        let bearingToTarget = calculateBearing(currentLatLng, target);
+        compassArrow.dataset.targetBearing = bearingToTarget;
+        if (!isOrientationSupported) {
+            let arrowRot = bearingToTarget - userCourse;
             setCompassRotation(arrowRot);
         }
-
-        // ---------- NAVIGATION ----------
-        function startNavigation(path) {
-            if (path.length < 1) { showNotification("Parcours trop court",3000,true); return; }
-            isNavigating = true;
-            navigationPath = path;
-            currentTargetIndex = 0;
-            navigationTracePath = [];
-            if (navigationTracePolyline) map.removeLayer(navigationTracePolyline);
-            navigationTracePolyline = null;
-            lastPositionForCourse = null;
-            isOrientationSupported = false;
-            currentCompassRotation = 0; targetCompassRotation = 0;
-            if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
-            compassArrow.style.transform = 'rotate(0deg)';
-            totalNavigationDistance = 0;
-            for (let i=0; i<path.length-1; i++) totalNavigationDistance += calculateDistance(path[i], path[i+1]);
-            if (navigationPolyline) map.removeLayer(navigationPolyline);
-            if (path.length > 1) navigationPolyline = L.polyline(path, { color: 'purple', weight:5, opacity:0.8 }).addTo(map);
-            navigationSection.classList.remove('hidden');
-            if (geolocationAvailable) {
-                orientationMsg.classList.remove('hidden');
+        let dist = calculateDistance(currentLatLng, target);
+        nextWaypointDistanceInfo.textContent = `Point ${currentTargetIndex+1} : ${formatDistance(dist)}`;
+        let remaining = 0;
+        for (let i=currentTargetIndex; i<navigationPath.length-1; i++) remaining += calculateDistance(navigationPath[i], navigationPath[i+1]);
+        let totalRem = dist + (navigationPath.length>1 ? remaining : 0);
+        totalDistanceInfo.textContent = `Restant : ${formatDistance(totalRem)}`;
+        if (totalNavigationDistance > 0) {
+            let completed = totalNavigationDistance - totalRem;
+            let pct = Math.min(100, (completed/totalNavigationDistance)*100);
+            progressBar.style.width = `${pct}%`;
+            completionPercentage.textContent = `${pct.toFixed(1)} % complété`;
+        }
+        if (isAutoscaleEnabled) {
+            let bounds = L.latLngBounds([currentLatLng, target]);
+            let expanded = expandBoundsByMeters(bounds, 200);
+            map.once('zoomend', () => { if (map.getZoom() > 17) map.setZoom(17); });
+            map.fitBounds(expanded);
+        }
+        if (dist < 50) {
+            if (currentTargetIndex < navigationPath.length-1) {
+                let nextNear = findNextNearbyPoint(currentLatLng, currentTargetIndex);
+                if (nextNear !== null) updateTargetWaypoint(nextNear);
+                else updateTargetWaypoint(currentTargetIndex+1);
+            } else {
+                // Arrivée à destination
+                statusMessage.textContent = "Destination atteinte !";
+                progressBar.style.width = '100%';
+                completionPercentage.textContent = "100 % complété";
+                showNotification("Navigation terminée", 3000);
+                announceArrival(); // Message vocal
+                // Arrêter la navigation mais garder la trace
                 setTimeout(() => {
-                    if (isNavigating && !isOrientationSupported) {
-                        showNotification("Pas de boussole, direction par déplacements",4000);
-                        statusMessage.textContent = "Déplacez-vous";
+                    if (isNavigating) stopNavigation(true);
+                }, 2000);
+            }
+        } else {
+            let nextNear = findNextNearbyPoint(currentLatLng, currentTargetIndex);
+            if (nextNear !== null && calculateDistance(currentLatLng, navigationPath[nextNear]) < 30) {
+                showNotification(`Saut anticipé vers point ${nextNear+1}`,2000);
+                updateTargetWaypoint(nextNear);
+            }
+        }
+    }
+    
+    // ======================== ORIENTATION (BOUSSOLE NATIVE) ========================
+    function handleOrientation(event) {
+        let heading = event.webkitCompassHeading || event.alpha;
+        if (typeof heading === 'number' && !isNaN(heading)) {
+            if (!isOrientationSupported) {
+                isOrientationSupported = true;
+                orientationMsg.classList.add('hidden');
+                statusMessage.textContent = "Suivez la flèche rouge";
+            }
+            userCourse = heading;
+            updateCompass(heading);
+            if (!isFollowHeadingEnabled) updateUserMarkerOrientation(heading);
+            updateMapOrientation();
+        }
+    }
+    function requestOrientationPermission() {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission()
+                .then(state => {
+                    if (state === 'granted') {
+                        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                        orientationMsg.classList.add('hidden');
+                    } else {
+                        isOrientationSupported = false;
+                        showNotification("Permission refusée, direction par déplacements",4000,true);
                         orientationMsg.classList.add('hidden');
                     }
-                }, 2000);
-            } else {
-                orientationMsg.classList.add('hidden');
-                compassArrow.parentElement.style.display = 'none';
-                showNotification("Navigation sans GPS",4000);
-            }
-            updateTargetWaypoint(currentTargetIndex);
-            updateUIState();
-        }
-
-        function stopNavigation() {
-            isNavigating = false;
-            navigationPath = [];
-            totalNavigationDistance = 0;
-            currentTargetIndex = -1;
-            navigationSection.classList.add('hidden');
+                })
+                .catch(console.error);
+        } else {
+            if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+            else if ('ondeviceorientation' in window) window.addEventListener('deviceorientation', handleOrientation, true);
             orientationMsg.classList.add('hidden');
-            if (navigationPolyline) map.removeLayer(navigationPolyline);
-            navigationPolyline = null;
-            if (navigationTracePolyline) map.removeLayer(navigationTracePolyline);
-            navigationTracePolyline = null;
-            navigationTracePath = [];
-            if (targetMarker) map.removeLayer(targetMarker);
-            targetMarker = null;
-            isOrientationSupported = false;
-            lastPositionForCourse = null;
-            if (compassAnimationFrame) cancelAnimationFrame(compassAnimationFrame);
-            if (map.setBearing) map.setBearing(0);
-            nextWaypointDistanceInfo.textContent = "";
-            totalDistanceInfo.textContent = "";
-            progressBar.style.width = '0%';
-            completionPercentage.textContent = "";
+        }
+    }
+    
+    // ======================== FICHIERS KMZ/KML ========================
+    function generateKmlString(path) {
+        if (!path.length) return null;
+        let coords = path.map(p => `${p[1]},${p[0]},0`).join(' ');
+        let geom = path.length === 1 ? `<Point><coordinates>${coords}</coordinates></Point>` : `<LineString><coordinates>${coords}</coordinates></LineString>`;
+        return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Mon Parcours</name><Placemark><name>Parcours</name>${geom}</Placemark></Document></kml>`;
+    }
+    function downloadKmz() {
+        if (recordedPath.length < 1) { showNotification("Parcours vide",3000,true); return; }
+        let kml = generateKmlString(recordedPath);
+        let zip = new JSZip();
+        zip.file("doc.kml", kml);
+        zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
+            .then(content => {
+                let a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = `parcours_${Date.now()}.kmz`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            });
+    }
+    function loadFile(e) {
+        let file = e.target.files[0];
+        if (!file) return;
+        let reader = new FileReader();
+        if (file.name.endsWith('.kmz') || file.name.endsWith('.zip')) {
+            reader.onload = e => JSZip.loadAsync(e.target.result).then(zip => {
+                let kmlFile = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('.kml'));
+                if (kmlFile) zip.file(kmlFile).async("string").then(parseKml);
+                else showNotification("Aucun fichier .kml",3000,true);
+            });
+            reader.readAsArrayBuffer(file);
+        } else if (file.name.endsWith('.kml')) {
+            reader.onload = e => parseKml(e.target.result);
+            reader.readAsText(file);
+        } else showNotification("Format non supporté",3000,true);
+        e.target.value = '';
+    }
+    function parseKml(kmlStr) {
+        let parser = new DOMParser();
+        let xml = parser.parseFromString(kmlStr, "text/xml");
+        let coordsEl = xml.getElementsByTagName('coordinates')[0];
+        if (!coordsEl) { showNotification("KML invalide",3000,true); return; }
+        let points = coordsEl.textContent.trim().split(/\s+/).map(coord => {
+            let [lon, lat] = coord.split(',').map(Number);
+            return (isNaN(lat) || isNaN(lon)) ? null : [lat, lon];
+        }).filter(Boolean);
+        if (points.length) {
+            let kmlContent = generateKmlString(points);
+            localStorage.setItem('lastKmlContent', kmlContent);
+            recordedPath = points;
+            if (recordedPolyline) map.removeLayer(recordedPolyline);
+            recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
+            map.fitBounds(recordedPolyline.getBounds());
             updateUIState();
-        }
-
-        function animateSkippedPoint(idx) {
-            if (!navigationPath[idx]) return;
-            let temp = L.circleMarker(navigationPath[idx], { radius:12, color:'#ff9800', weight:3, fillColor:'#ffc107', fillOpacity:0.8, className:'skip-animation' }).addTo(map);
-            setTimeout(() => map.removeLayer(temp), 500);
-        }
-
-        function updateTargetWaypoint(index) {
-            if (index < 0 || index >= navigationPath.length) return;
-            let old = currentTargetIndex;
-            currentTargetIndex = index;
-            let targetLL = navigationPath[currentTargetIndex];
-            if (!targetMarker) targetMarker = L.circleMarker(targetLL, { radius:8, color:'white', weight:2, fillColor:'#ef4444', fillOpacity:1 }).addTo(map);
-            else targetMarker.setLatLng(targetLL);
-            if (old !== -1 && Math.abs(old-index) > 1) {
-                for (let i=old+1; i<=index; i++) setTimeout(() => animateSkippedPoint(i), i*100);
-                showNotification(`Passage direct au point ${index+1}`,2000);
-            } else if (old !== -1 && old !== index) animateSkippedPoint(index);
-            statusMessage.textContent = `Point Cible : ${currentTargetIndex+1} / ${navigationPath.length}`;
-            if (totalNavigationDistance > 0) {
-                let covered = 0;
-                for (let i=0; i<currentTargetIndex; i++) covered += calculateDistance(navigationPath[i], navigationPath[i+1]);
-                let pct = Math.min(100, (covered/totalNavigationDistance)*100);
-                progressBar.style.width = `${pct}%`;
-                completionPercentage.textContent = `${pct.toFixed(1)} % complété`;
-            }
-            if (userMarker) updateNavigation(userMarker.getLatLng());
-            else { nextWaypointDistanceInfo.textContent = "Distance indisponible"; totalDistanceInfo.textContent = `Distance totale : ${formatDistance(totalNavigationDistance)}`; }
-            prevWaypointBtn.disabled = currentTargetIndex <= 0;
-            nextWaypointBtn.disabled = currentTargetIndex >= navigationPath.length-1;
-            if (lastSpokenTargetIndex !== currentTargetIndex && userMarker) {
-                lastSpokenTargetIndex = currentTargetIndex;
-                announceCurrentTarget();
-            }
-        }
-
-        function findNextNearbyPoint(current, startIdx) {
-            for (let i=startIdx+1; i<navigationPath.length; i++) {
-                if (calculateDistance(current, navigationPath[i]) <= 50) return i;
-            }
-            return null;
-        }
-
-        function updateNavigation(currentLatLng) {
-            if (!isNavigating || currentTargetIndex < 0) return;
-            let target = navigationPath[currentTargetIndex];
-            let bearingToTarget = calculateBearing(currentLatLng, target);
-            compassArrow.dataset.targetBearing = bearingToTarget;
-            if (!isOrientationSupported) {
-                let arrowRot = bearingToTarget - userCourse;
-                setCompassRotation(arrowRot);
-            }
-            let dist = calculateDistance(currentLatLng, target);
-            nextWaypointDistanceInfo.textContent = `Point ${currentTargetIndex+1} : ${formatDistance(dist)}`;
-            let remaining = 0;
-            for (let i=currentTargetIndex; i<navigationPath.length-1; i++) remaining += calculateDistance(navigationPath[i], navigationPath[i+1]);
-            let totalRem = dist + (navigationPath.length>1 ? remaining : 0);
-            totalDistanceInfo.textContent = `Restant : ${formatDistance(totalRem)}`;
-            if (totalNavigationDistance > 0) {
-                let completed = totalNavigationDistance - totalRem;
-                let pct = Math.min(100, (completed/totalNavigationDistance)*100);
-                progressBar.style.width = `${pct}%`;
-                completionPercentage.textContent = `${pct.toFixed(1)} % complété`;
-            }
-            if (isAutoscaleEnabled) {
-                let bounds = L.latLngBounds([currentLatLng, target]);
-                let expanded = expandBoundsByMeters(bounds, 200);
-                map.once('zoomend', () => { if (map.getZoom() > 17) map.setZoom(17); });
-                map.fitBounds(expanded);
-            }
-            // Saut automatique vers points proches
-            if (dist < 50) {
-                if (currentTargetIndex < navigationPath.length-1) {
-                    let nextNear = findNextNearbyPoint(currentLatLng, currentTargetIndex);
-                    if (nextNear !== null) updateTargetWaypoint(nextNear);
-                    else updateTargetWaypoint(currentTargetIndex+1);
-                } else {
-                    statusMessage.textContent = "Destination atteinte !";
-                    progressBar.style.width = '100%';
-                    completionPercentage.textContent = "100 % complété";
-                    showNotification("Navigation terminée");
-                    setTimeout(stopNavigation, 3000);
-                }
-            } else {
-                let nextNear = findNextNearbyPoint(currentLatLng, currentTargetIndex);
-                if (nextNear !== null && calculateDistance(currentLatLng, navigationPath[nextNear]) < 30) {
-                    showNotification(`Saut anticipé vers point ${nextNear+1}`,2000);
-                    updateTargetWaypoint(nextNear);
-                }
-            }
-        }
-
-        // ---------- ORIENTATION (BOUSSOLE NATIVE) ----------
-        function handleOrientation(event) {
-            let heading = event.webkitCompassHeading || event.alpha;
-            if (typeof heading === 'number' && !isNaN(heading)) {
-                if (!isOrientationSupported) {
-                    isOrientationSupported = true;
-                    orientationMsg.classList.add('hidden');
-                    statusMessage.textContent = "Suivez la flèche rouge";
-                }
-                userCourse = heading;
-                updateCompass(heading);
+            showNotification("Parcours chargé",3000);
+        } else showNotification("Aucune coordonnée",3000,true);
+    }
+    
+    // ======================== ÉCOUTEURS ========================
+    startBtn.addEventListener('click', () => { isRecording = true; recordedPath = []; if (recordedPolyline) map.removeLayer(recordedPolyline); recordedPolyline = null; updateUIState(); });
+    stopBtn.addEventListener('click', () => { isRecording = false; updateUIState(); });
+    drawBtn.addEventListener('click', () => { drawnPath = []; startDrawing(); });
+    confirmDrawBtn.addEventListener('click', () => stopDrawing(true));
+    cancelDrawBtn.addEventListener('click', () => stopDrawing(false));
+    downloadBtn.addEventListener('click', downloadKmz);
+    loadInput.addEventListener('change', loadFile);
+    orientationMsg.addEventListener('click', requestOrientationPermission);
+    simplifyDrawBtn.addEventListener('click', simplifyDrawPath);
+    reverseDrawBtn.addEventListener('click', reverseDrawPath);
+    prevWaypointBtn.addEventListener('click', () => { if (isNavigating && currentTargetIndex > 0) updateTargetWaypoint(currentTargetIndex-1); });
+    nextWaypointBtn.addEventListener('click', () => { if (isNavigating && currentTargetIndex < navigationPath.length-1) updateTargetWaypoint(currentTargetIndex+1); });
+    stopNavigateBtn.addEventListener('click', () => { if (isNavigating) stopNavigation(true); });
+    autoscaleCheckbox.addEventListener('change', e => isAutoscaleEnabled = e.target.checked);
+    followHeadingCheckbox.addEventListener('change', e => { 
+        isFollowHeadingEnabled = e.target.checked;
+        updateMapOrientation();
+        if (userMarker) {
+            if (isFollowHeadingEnabled) updateUserMarkerOrientation(0);
+            else {
+                let heading = isOrientationSupported ? userCourse : (userCourse || 0);
                 updateUserMarkerOrientation(heading);
-                updateMapOrientation();
             }
         }
-
-        function requestOrientationPermission() {
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(state => {
-                        if (state === 'granted') {
-                            window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-                            orientationMsg.classList.add('hidden');
-                        } else {
-                            isOrientationSupported = false;
-                            showNotification("Permission refusée, direction par déplacements",4000,true);
-                            orientationMsg.classList.add('hidden');
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-                else if ('ondeviceorientation' in window) window.addEventListener('deviceorientation', handleOrientation, true);
-                orientationMsg.classList.add('hidden');
-            }
-        }
-
-        // ---------- FICHIERS KMZ/KML ----------
-        function generateKmlString(path) {
-            if (!path.length) return null;
-            let coords = path.map(p => `${p[1]},${p[0]},0`).join(' ');
-            let geom = path.length === 1 ? `<Point><coordinates>${coords}</coordinates></Point>` : `<LineString><coordinates>${coords}</coordinates></LineString>`;
-            return `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Mon Parcours</name><Placemark><name>Parcours</name>${geom}</Placemark></Document></kml>`;
-        }
-
-        function downloadKmz() {
-            if (recordedPath.length < 1) { showNotification("Parcours vide",3000,true); return; }
-            let kml = generateKmlString(recordedPath);
-            let zip = new JSZip();
-            zip.file("doc.kml", kml);
-            zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
-                .then(content => {
-                    let a = document.createElement('a');
-                    a.href = URL.createObjectURL(content);
-                    a.download = `parcours_${Date.now()}.kmz`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(a.href);
-                });
-        }
-
-        function loadFile(e) {
-            let file = e.target.files[0];
-            if (!file) return;
-            let reader = new FileReader();
-            if (file.name.endsWith('.kmz') || file.name.endsWith('.zip')) {
-                reader.onload = e => JSZip.loadAsync(e.target.result).then(zip => {
-                    let kmlFile = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('.kml'));
-                    if (kmlFile) zip.file(kmlFile).async("string").then(parseKml);
-                    else showNotification("Aucun fichier .kml dans l'archive",3000,true);
-                });
-                reader.readAsArrayBuffer(file);
-            } else if (file.name.endsWith('.kml')) {
-                reader.onload = e => parseKml(e.target.result);
-                reader.readAsText(file);
-            } else {
-                showNotification("Format non supporté",3000,true);
-            }
-            e.target.value = '';
-        }
-
-        function parseKml(kmlStr) {
-            let parser = new DOMParser();
-            let xml = parser.parseFromString(kmlStr, "text/xml");
-            let coordsEl = xml.getElementsByTagName('coordinates')[0];
-            if (!coordsEl) { showNotification("KML invalide",3000,true); return; }
-            let points = coordsEl.textContent.trim().split(/\s+/).map(coord => {
-                let [lon, lat] = coord.split(',').map(Number);
-                return (isNaN(lat) || isNaN(lon)) ? null : [lat, lon];
-            }).filter(Boolean);
-            if (points.length) {
-                let kmlContent = generateKmlString(points);
-                localStorage.setItem('lastKmlContent', kmlContent);
-                recordedPath = points;
-                if (recordedPolyline) map.removeLayer(recordedPolyline);
-                recordedPolyline = L.polyline(recordedPath, { color: 'red' }).addTo(map);
-                map.fitBounds(recordedPolyline.getBounds());
-                updateUIState();
-                showNotification("Parcours chargé",3000);
-            } else {
-                showNotification("Aucune coordonnée valide",3000,true);
-            }
-        }
-
-        // ---------- ÉCOUTEURS ----------
-        startBtn.addEventListener('click', () => { isRecording = true; recordedPath = []; if (recordedPolyline) map.removeLayer(recordedPolyline); recordedPolyline = null; updateUIState(); });
-        stopBtn.addEventListener('click', () => { isRecording = false; updateUIState(); });
-        drawBtn.addEventListener('click', () => { drawnPath = []; startDrawing(); });
-        confirmDrawBtn.addEventListener('click', () => stopDrawing(true));
-        cancelDrawBtn.addEventListener('click', () => stopDrawing(false));
-        downloadBtn.addEventListener('click', downloadKmz);
-        loadInput.addEventListener('change', loadFile);
-        orientationMsg.addEventListener('click', requestOrientationPermission);
-        simplifyDrawBtn.addEventListener('click', simplifyDrawPath);
-        reverseDrawBtn.addEventListener('click', reverseDrawPath);
-        prevWaypointBtn.addEventListener('click', () => { if (isNavigating && currentTargetIndex > 0) updateTargetWaypoint(currentTargetIndex-1); });
-        nextWaypointBtn.addEventListener('click', () => { if (isNavigating && currentTargetIndex < navigationPath.length-1) updateTargetWaypoint(currentTargetIndex+1); });
-        stopNavigateBtn.addEventListener('click', stopNavigation);
-        autoscaleCheckbox.addEventListener('change', e => isAutoscaleEnabled = e.target.checked);
-        followHeadingCheckbox.addEventListener('change', e => { isFollowHeadingEnabled = e.target.checked; updateMapOrientation(); });
-        speakBtn.addEventListener('click', () => { if (isNavigating && userMarker) announceCurrentTarget(); else showNotification("Navigation inactive",2000,true); });
-        document.getElementById('edit-path-btn').addEventListener('click', () => { if (recordedPath.length) { drawnPath = [...recordedPath]; startDrawing(); redrawDrawingLayer(); } });
-        document.getElementById('navigate-btn').addEventListener('click', () => { if (isNavigating) stopNavigation(); else if (recordedPath.length) startNavigation(recordedPath); else showNotification("Aucun parcours",3000,true); });
-
-        // ---------- DÉMARRAGE ----------
-        window.onload = () => {
-            initMap();
-            startGeolocation();
-            updateUIState();
-            let saved = localStorage.getItem('lastKmlContent');
-            if (saved) { showNotification("Dernier parcours chargé",2000); parseKml(saved); }
-        };
-    </script>
+    });
+    speakBtn.addEventListener('click', () => { if (isNavigating && userMarker) announceCurrentTarget(); else showNotification("Navigation inactive",2000,true); });
+    document.getElementById('edit-path-btn').addEventListener('click', () => { if (recordedPath.length) { drawnPath = [...recordedPath]; startDrawing(); redrawDrawingLayer(); } });
+    document.getElementById('navigate-btn').addEventListener('click', () => { if (isNavigating) stopNavigation(true); else if (recordedPath.length) startNavigation(recordedPath); else showNotification("Aucun parcours",3000,true); });
+    
+    // ======================== DÉMARRAGE ========================
+    window.onload = () => {
+        initMap();
+        startGeolocation();
+        updateUIState();
+        let saved = localStorage.getItem('lastKmlContent');
+        if (saved) { showNotification("Dernier parcours chargé",2000); parseKml(saved); }
+    };
+</script>
 </body>
 </html>
